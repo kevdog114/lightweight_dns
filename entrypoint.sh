@@ -34,6 +34,7 @@ printenv | while IFS='=' read -r var_name var_value; do
   esac
 done
 
+echo "DNSMASQ_ARGS: '$DNSMASQ_ARGS'"
 
 # Check if any arguments were added to DNSMASQ_ARGS
 if [ -z "$DNSMASQ_ARGS" ]; then # -z checks if the string is empty
