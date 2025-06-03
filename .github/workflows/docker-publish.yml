@@ -1,0 +1,73 @@
+# .github/workflows/docker-publish.yml
+
+name: Docker Build and Publish
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "main" ] # Triggers on pushes to the main branch
+    tags:
+      - 'v*.*.*' # Triggers on tags like v1.0.0, v1.2.3
+  pull_request:
+    branches: [ "main" ] # Optionally, build on PRs to main for testing (won't publish)
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Needed to check out the repository
+      packages: write # Needed to push to Docker Hub (or other registries)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # Ensure submodules are checked out if your project uses them
+        # with:
+        #   submodules: true
+
+      - name: Set up QEMU
+        # QEMU is used for multi-platform builds (optional but good practice)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        # Buildx is a Docker CLI plugin for extended build capabilities
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        # Only log in if this is a push to main or a tag, not for PRs
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/lightweight-dns # Replace with your Docker Hub repo name
+          # Example tags:
+          # type=schedule
+          # type=ref,event=branch
+          # type=ref,event=pr
+          # type=semver,pattern={{version}}
+          # type=semver,pattern={{major}}.{{minor}}
+          # type=semver,pattern={{major}}
+          # type=sha
+          tags: |
+            type=edge,branch=main  # 'edge' tag for pushes to main
+            type=ref,event=tag     # Git tag as Docker tag (e.g., v1.0.0)
+            type=raw,value=latest,enable={{is_default_branch}} # 'latest' tag for default branch (main)
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: . # Build context is the root of the repository
+          file: ./Dockerfile # Path to your Dockerfile
+          push: ${{ github.event_name == 'push' }} # Only push on 'push' events (main or tags), not PRs
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64 # Example: build for amd64 and arm64 (optional)
+          cache-from: type=gha # Enable build cache from GitHub Actions
+          cache-to: type=gha,mode=max # Enable build cache to GitHub Actions
+
