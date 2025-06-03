@@ -34,8 +34,12 @@ printenv | while IFS='=' read -r var_name var_value; do
   esac
 done
 
-if [ "$CUSTOM_RECORDS_FOUND" -eq 0 ]; then
-  echo "WARN: No A_RECORD_* environment variables found or all were malformed. dnsmasq will start with no custom A records from environment."
+
+# Check if any arguments were added to DNSMASQ_ARGS
+if [ -z "$DNSMASQ_ARGS" ]; then # -z checks if the string is empty
+  echo "WARN: No valid A_RECORD_* environment variables found or all were malformed. dnsmasq will start with no custom A records from environment."
+else
+  echo "INFO: Custom A records have been configured."
 fi
 
 # Default dnsmasq options:
@@ -48,7 +52,7 @@ fi
 #              and any other local configurations. It will not forward other queries.
 #              If you want forwarding, remove --no-resolv and potentially add --server options
 #              (e.g., --server=8.8.8.8 --server=1.1.1.1).
-DEFAULT_OPTS="--log-queries --log-facility=- --no-hosts --no-resolv"
+DEFAULT_OPTS="--log-queries --log-facility=- --no-hosts --no-resolv --listen-address=0.0.0.0 --local-service"
 
 echo "INFO: Starting dnsmasq..."
 # Execute dnsmasq with the generated arguments and any command arguments passed to the container (from Docker CMD)
