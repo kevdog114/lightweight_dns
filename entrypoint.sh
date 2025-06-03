@@ -5,13 +5,15 @@
 set -e
 
 DNSMASQ_ARGS=""
-CUSTOM_RECORDS_FOUND=0
+# We will check if DNSMASQ_ARGS is non-empty later.
 
+echo "Lightweight DNS"
 echo "INFO: Searching for A_RECORD_* environment variables..."
 
-# Iterate over all environment variables to find A_RECORD_*
-# Using printenv and a loop is more robust for various shell environments.
-printenv | while IFS='=' read -r var_name var_value; do
+# Generate all potential arguments. Each valid --address will be on a new line.
+# Logs (INFO/WARN) go to stderr and are displayed immediately.
+# Valid --address arguments go to stdout and are captured by GENERATED_ARGS.
+GENERATED_ARGS=$(printenv | while IFS='=' read -r var_name var_value; do
   # Check if the variable name starts with A_RECORD_
   case "$var_name" in
     A_RECORD_*)
@@ -24,15 +26,27 @@ printenv | while IFS='=' read -r var_name var_value; do
       ip_address=$(echo "$var_value" | cut -d= -f2-) # -f2- gets the rest of the string after the first '='
 
       if [ -n "$hostname" ] && [ -n "$ip_address" ] && [ "$hostname" != "$var_value" ] && [ "$ip_address" != "$var_value" ]; then
-        DNSMASQ_ARGS="$DNSMASQ_ARGS --address=/$hostname/$ip_address"
-        echo "INFO: Configuring A record: $hostname -> $ip_address"
-        CUSTOM_RECORDS_FOUND=1
+        echo "--address=/$hostname/$ip_address" # Output argument to STDOUT
+        echo "INFO: Configuring A record: $hostname -> $ip_address" >&2 # Log to STDERR
       else
-        echo "WARN: Malformed or incomplete A_RECORD variable: $var_name=$var_value. Expected format: HOSTNAME=IP_ADDRESS. Skipping."
+        echo "WARN: Malformed or incomplete A_RECORD variable: $var_name=$var_value. Expected format: HOSTNAME=IP_ADDRESS. Skipping." >&2 # Log to STDERR
       fi
       ;;
   esac
-done
+done) # End of command substitution for GENERATED_ARGS
+
+# Now, process the captured arguments to build DNSMASQ_ARGS.
+# This loop runs in the current shell because of the here-string (<<<).
+if [ -n "$GENERATED_ARGS" ]; then
+  while IFS= read -r arg_line; do
+    # Each line in GENERATED_ARGS should be a valid --address argument.
+    # We append it to DNSMASQ_ARGS, ensuring a space separator.
+    # The initial space in "$DNSMASQ_ARGS $arg_line" is intentional if DNSMASQ_ARGS is empty,
+    # dnsmasq handles leading/multiple spaces in its arguments gracefully.
+    # If DNSMASQ_ARGS is already populated, it adds a space before the new argument.
+    DNSMASQ_ARGS="$DNSMASQ_ARGS $arg_line"
+  done <<< "$GENERATED_ARGS"
+fi
 
 echo "DNSMASQ_ARGS: '$DNSMASQ_ARGS'"
 
@@ -53,9 +67,12 @@ fi
 #              and any other local configurations. It will not forward other queries.
 #              If you want forwarding, remove --no-resolv and potentially add --server options
 #              (e.g., --server=8.8.8.8 --server=1.1.1.1).
+# --listen-address=0.0.0.0: Listen on all interfaces within the container.
+# --local-service: Accept DNS queries from any interface it's listening on.
 DEFAULT_OPTS="--log-queries --log-facility=- --no-hosts --no-resolv --listen-address=0.0.0.0 --local-service"
 
-echo "INFO: Starting dnsmasq..."
+echo "INFO: Starting dnsmasq with arguments: $DEFAULT_OPTS$DNSMASQ_ARGS $@" # Note: DNSMASQ_ARGS will have a leading space if not empty
 # Execute dnsmasq with the generated arguments and any command arguments passed to the container (from Docker CMD)
 # The "$@" allows passing additional dnsmasq flags when running the container.
+# Using $DNSMASQ_ARGS without quotes allows word splitting for the arguments.
 exec dnsmasq --no-daemon $DEFAULT_OPTS $DNSMASQ_ARGS "$@"
