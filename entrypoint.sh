@@ -7,7 +7,7 @@ set -e
 DNSMASQ_ARGS=""
 # We will check if DNSMASQ_ARGS is non-empty later.
 
-echo "Lightweight DNS"
+echo "Lightweight DNS v2"
 echo "INFO: Searching for A_RECORD_* environment variables..."
 
 # Generate all potential arguments. Each valid --address will be on a new line.
@@ -36,16 +36,17 @@ GENERATED_ARGS=$(printenv | while IFS='=' read -r var_name var_value; do
 done) # End of command substitution for GENERATED_ARGS
 
 # Now, process the captured arguments to build DNSMASQ_ARGS.
-# This loop runs in the current shell because of the here-string (<<<).
+# This loop runs in the current shell.
 if [ -n "$GENERATED_ARGS" ]; then
-  while IFS= read -r arg_line; do
+  # Use echo and pipe to the while loop for POSIX compatibility
+  echo "$GENERATED_ARGS" | while IFS= read -r arg_line; do
     # Each line in GENERATED_ARGS should be a valid --address argument.
     # We append it to DNSMASQ_ARGS, ensuring a space separator.
     # The initial space in "$DNSMASQ_ARGS $arg_line" is intentional if DNSMASQ_ARGS is empty,
     # dnsmasq handles leading/multiple spaces in its arguments gracefully.
     # If DNSMASQ_ARGS is already populated, it adds a space before the new argument.
     DNSMASQ_ARGS="$DNSMASQ_ARGS $arg_line"
-  done <<< "$GENERATED_ARGS"
+  done
 fi
 
 echo "DNSMASQ_ARGS: '$DNSMASQ_ARGS'"
